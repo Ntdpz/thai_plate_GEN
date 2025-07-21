@@ -1,41 +1,49 @@
-# thai-license-plate-recognition-CRNN
- 
-## To Generate License Plate for Training
-1. Navigate to license_plate_generator folder
-2. Open cmd
-3. type "python Generator_augmentation -n [number of image to generate] -s save -i [directory to save image]
 
-## To Train Model
-1. Navigate to root folder
-2. Open cmd
-3. python training.py
-** automatically save weight data in every each epoch
+# 🇹🇭 Thai License Plate Recognition - CRNN
 
-## To Evaluate
-I use Evaluate_Predict_Showcase.ipynb to evluate the model.
+ระบบรู้จำป้ายทะเบียนรถยนต์ไทยด้วยโมเดล CRNN พร้อมระบบสร้างภาพสังเคราะห์เพื่อใช้ในการฝึกโมเดล
 
-## File Description
-OS : Windows 10
+---
 
-Python : 3.7
+## 📸 การสร้างภาพป้ายทะเบียน (Synthetic Plate Generator)
 
-Tensorflow : 2.3.0
+สคริปต์ `generate_plates.py` ใช้สร้างภาพป้ายทะเบียนไทยที่หลากหลาย เช่น สีพื้นหลัง, จังหวัด, หมุนเอียง 3D เพื่อใช้เป็นข้อมูลฝึกให้กับ AI
 
-Keras : 2.4.3
+### ✅ วิธีใช้งาน
 
-| File  | Description |
-| ------------- | ------------- |
-| Model.py  | Contain CRNN model  |
-| parameter.py  | Contain parameters  |
-| training.py  | Model training file  |
-| Image_Generator.py  | Image Preprocessing and formating before .fit()  |
-| save_model.py  | Saving trained model as .h5  |
-| LSTM+BN5--thai-v3.hdf5  | Contain Trained CRNN weight  |
-| Model_LSTM+BN5--thai-v3.h5  | Contain Trained CRNN model |  
+```bash
+python generate_plates.py -n [จำนวนรูป] [OPTIONS]
+```
 
+### 🔧 พารามิเตอร์ทั้งหมด
 
-[Owner of original repository](https://github.com/qjadud1994/CRNN-Keras)
+| Parameter             | Description                                                  | Example                  |
+|----------------------|--------------------------------------------------------------|--------------------------|
+| `-n`, `--num`        | จำนวนภาพที่ต้องการสร้าง (จำเป็น)                          | `-n 100`                 |
+| `-i`, `--img_dir`    | โฟลเดอร์ปลายทางสำหรับเก็บภาพ (default: ../CRNN/DB/)      | `-i output_folder/`      |
+| `-s`, `--save`       | Flag สำหรับบันทึกไฟล์ลงดิสก์ (หากไม่ใส่จะโชว์บนจอ)        | `-s`                     |
+| `--rx`               | หมุนภาพรอบแกน X (Pitch) เป็นองศา                           | `--rx 10`                |
+| `--ry`               | หมุนภาพรอบแกน Y (Yaw) เป็นองศา                             | `--ry -15`               |
+| `--rz`               | หมุนภาพรอบแกน Z (Roll) เป็นองศา                            | `--rz 5`                 |
+| `-p`, `--plate_type` | ประเภทพื้นหลังป้าย เช่น AQ, BJ                              | `-p AQ`                  |
+| `--pc`, `--plate_color` | ระบุสีป้าย (ขาว, เหลือง, เขียว, แดง)                  | `--pc เขียว`            |
+| `--pw`               | ความกว้างป้าย (พิกเซล)                                      | `--pw 400`               |
+| `--ph`               | ความสูงป้าย (พิกเซล)                                        | `--ph 180`               |
 
-[Original Paper](https://arxiv.org/pdf/1507.05717.pdf)
+---
 
-This model still need be fine-tuned with real license plate images.
+### 💡 ตัวอย่างการใช้งาน
+
+```bash
+# สร้าง 50 รูปภาพและบันทึกลงโฟลเดอร์ my_data/
+python generate_plates.py -n 50 -s -i my_data/
+
+# แสดงภาพบนหน้าจอโดยไม่บันทึก พร้อมหมุน X 10° และ Z 5°
+python generate_plates.py -n 10 --rx 10 --rz 5
+
+# สร้างภาพพื้นหลังเขียว ขนาด 400x180
+python generate_plates.py -n 20 -s --pc เขียว --pw 400 --ph 180
+
+# ใช้พื้นหลังป้ายแบบ "BJ" และหมุน Y 15°
+python generate_plates.py -n 5 -p BJ --ry 15 -s
+```
