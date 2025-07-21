@@ -320,6 +320,12 @@ class ImageGenerator:
             print(f"WARNING: Failed to load CV plate image: {cv_plate_path}. 'CV' plates might use default 'plate.jpg'.")
         self.special_plates['CV'] = cv_plate_img
 
+        da_plate_path = os.path.join(script_dir, "DA_plate.jpg")
+        da_plate_img = cv2.imread(da_plate_path, cv2.IMREAD_COLOR)
+        if da_plate_img is None:
+            print(f"WARNING: Failed to load DA plate image: {da_plate_path}. 'DA' plates might use default 'plate.jpg'.")
+        self.special_plates['DA'] = da_plate_img
+
         # --- สำคัญ: คอมเมนต์ออก หากคุณไม่มี DV_plate.jpg ---
         # dv_plate_path = os.path.join(script_dir, "DV_plate.jpg")
         # dv_plate_img = cv2.imread(dv_plate_path, cv2.IMREAD_COLOR)
