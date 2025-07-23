@@ -3,209 +3,195 @@ import random
 import cv2
 import argparse
 import numpy as np
-import math
 
-# --- ฟังก์ชันช่วยเหลือใหม่: การหมุน 3 มิติ ---
-def apply_3d_rotation(image, rx, ry, rz):
+def rotate_image(image, angle):
     """
-    ทำการหมุน 3 มิติ (roll, pitch, yaw) บนภาพโดยใช้ Perspective Transform
+    Rotates an image around its center.
 
-    อาร์กิวเมนต์:
-        image (numpy.ndarray): รูปภาพอินพุต (BGR หรือ BGRA)
-        rx (float): มุมการหมุนรอบแกน X (Pitch) เป็นองศา
-        ry (float): มุมการหมุนรอบแกน Y (Yaw) เป็นองศา
-        rz (float): มุมการหมุนรอบแกน Z (Roll) เป็นองศา
+    Args:
+        image (numpy.ndarray): The input image.
+        angle (float): The rotation angle in degrees (positive for counter-clockwise).
 
-    คืนค่า:
-        numpy.ndarray: รูปภาพที่หมุนแล้วพร้อม Perspective Transform
+    Returns:
+        numpy.ndarray: The rotated image.
     """
-    h, w = image.shape[:2]
-    
-    # แปลงมุมจากองศาเป็นเรเดียน
-    rx = math.radians(rx)
-    ry = math.radians(ry)
-    rz = math.radians(rz)
+    # Get image dimensions
+    (h, w) = image.shape[:2]
+    # Calculate the center of the image
+    center = (w // 2, h // 2)
 
-    # เมทริกซ์การหมุน (จากจุดศูนย์กลางภาพ)
-    # หมุนรอบแกน X (Pitch)
-    Rx = np.array([
-        [1, 0, 0],
-        [0, math.cos(rx), -math.sin(rx)],
-        [0, math.sin(rx), math.cos(rx)]
-    ])
+    # Get the rotation matrix
+    M = cv2.getRotationMatrix2D(center, angle, 1.0) # 1.0 is scale factor
 
-    # หมุนรอบแกน Y (Yaw)
-    Ry = np.array([
-        [math.cos(ry), 0, math.sin(ry)],
-        [0, 1, 0],
-        [-math.sin(ry), 0, math.cos(ry)]
-    ])
-
-    # หมุนรอบแกน Z (Roll)
-    Rz = np.array([
-        [math.cos(rz), -math.sin(rz), 0],
-        [math.sin(rz), math.cos(rz), 0],
-        [0, 0, 1]
-    ])
-
-    # รวมเมทริกซ์การหมุน: R = Rz @ Ry @ Rx
-    R = Rz @ Ry @ Rx
-
-    # สร้างจุด 3 มิติของมุมภาพ (อ้างอิงจากจุดศูนย์กลาง)
-    # จุด (x, y, z) โดยที่ z เป็น 0 สำหรับภาพ 2 มิติเริ่มต้น
-    points_3d = np.array([
-        [-w/2, -h/2, 0],  # Top-left
-        [-w/2, h/2, 0],   # Bottom-left
-        [w/2, -h/2, 0],   # Top-right
-        [w/2, h/2, 0]     # Bottom-right
-    ])
-
-    # จุด 3 มิติที่หมุนแล้ว
-    rotated_points = points_3d @ R.T # R.T คือ transpose ของ R
-
-    # การฉายภาพแบบ Perspective (สมมติกล้องอยู่ห่างออกไป)
-    # จุดกำเนิดภาพอยู่ที่ (0,0) (Top-left)
-    # F = ระยะโฟกัส (ค่าที่ใหญ่ขึ้น = การบิดเบือนน้อยลง)
-    F = w * 1.5 # ปรับค่า F เพื่อควบคุมผลกระทบของ Perspective
-    
-    # สร้างเมทริกซ์กล้องแบบง่ายๆ (การฉายภาพแบบ Perspective)
-    K = np.array([
-        [F, 0, w/2],
-        [0, F, h/2],
-        [0, 0, 1]
-    ])
-
-    # แปลงจุด 3 มิติที่หมุนแล้วให้เป็น 2 มิติ (จุดบนระนาบภาพ)
-    projected_points = []
-    for p in rotated_points:
-        z_prime = p[2] + F 
-        if z_prime == 0: 
-            z_prime = 1e-6 
-        
-        x_prime = (p[0] * F) / z_prime + w/2
-        y_prime = (p[1] * F) / z_prime + h/2
-        projected_points.append([x_prime, y_prime])
-        
-    projected_points = np.float32(projected_points)
-
-    # จุดต้นฉบับบนภาพ 2 มิติ (ก่อนหมุน)
-    pts1 = np.float32([[0, 0], [0, h], [w, 0], [w, h]]) 
-    
-    # รับเมทริกซ์ Perspective Transform
-    M = cv2.getPerspectiveTransform(pts1, projected_points)
-
-    # ใช้ Perspective Transform กับรูปภาพ
-    rotated_image = cv2.warpPerspective(image, M, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    # Perform the rotation
+    # Note: This will crop parts of the image if it rotates beyond the original bounds.
+    # To avoid cropping, you would need to calculate new dimensions for the rotated image
+    # and adjust the translation part of the rotation matrix (M).
+    rotated_image = cv2.warpAffine(image, M, (w, h), borderMode=cv2.BORDER_REPLICATE)
     return rotated_image
-# --- สิ้นสุดฟังก์ชันช่วยเหลือใหม่ ---
 
-def image_augmentation(img, type2=False):
+
+def image_augmentation(img, type2=False, apply_blur=True): # เพิ่ม apply_blur=True
+    """
+    Performs image augmentation including perspective transformation, brightness adjustment,
+    and blurring.
+    """
+    # Perspective transformation
+    # Get image dimensions (height, width, channels)
     h, w, _ = img.shape
-    
-    if random.random() < 0.5:
-        pts1 = np.float32([[0, 0], [0, h], [w, 0], [w, h]])
-        begin, end = 30, 90
-        pts2 = np.float32([[random.randint(begin, end), random.randint(begin, end)],
-                           [random.randint(begin, end), h - random.randint(begin, end)],
-                           [w - random.randint(begin, end), random.randint(begin, end)],
-                           [w - random.randint(begin, end), h - random.randint(begin, end)]])
-        M = cv2.getPerspectiveTransform(pts1, pts2)
-        img = cv2.warpPerspective(img, M, (w, h))
+    # Define source points (corners of the original image)
+    pts1 = np.float32([[0, 0], [0, h], [w, 0], [w, h]])
 
+    begin, end = 30, 90
+    # Define destination points for perspective transformation with random offsets
+    pts2 = np.float32([[random.randint(begin, end), random.randint(begin, end)],
+                       [random.randint(begin, end), h - random.randint(begin, end)],
+                       [w - random.randint(begin, end), random.randint(begin, end)],
+                       [w - random.randint(begin, end), h - random.randint(begin, end)]])
+    # Get the perspective transformation matrix
+    M = cv2.getPerspectiveTransform(pts1, pts2)
+
+    # Apply perspective transformation
+    img = cv2.warpPerspective(img, M, (w, h))
+
+    # Brightness adjustment
+    # Convert image from RGB to HSV color space
     img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    img = np.array(img, dtype=np.float64)
-    random_bright = .4 + np.random.uniform()
-    img[:, :, 2] = img[:, :, 2] * random_bright
-    img[:, :, 2][img[:, :, 2] > 255] = 255
-    img = np.array(img, dtype=np.uint8)
-    img = cv2.cvtColor(img, cv2.COLOR_HSV2BGR)
+    img = np.array(img, dtype=np.float64) # Convert to float64 for calculations
+    random_bright = .4 + np.random.uniform() # Generate a random brightness factor
+    img[:, :, 2] = img[:, :, 2] * random_bright # Adjust V (Value/Brightness) channel
+    img[:, :, 2][img[:, :, 2] > 255] = 255 # Clip values to max 255
+    img = np.array(img, dtype=np.uint8) # Convert back to uint8
+    img = cv2.cvtColor(img, cv2.COLOR_HSV2BGR) # Convert back to BGR
 
-    if random.random() < 0.5:
-        blur_value = random.randint(0,4) * 2 + 1
-        img = cv2.blur(img,(blur_value, blur_value))
+    # Blur - เพิ่มเงื่อนไข if apply_blur
+    if apply_blur:
+        blur_value = random.randint(0,4) * 2 + 1 # Generate odd blur kernel size (1, 3, 5, 7, 9)
+        img = cv2.blur(img,(blur_value, blur_value)) # Apply blur
 
+    # Crop the image based on type
     if type2:
         return img[130:280, 220:560, :]
     return img[130:280, 120:660, :]
 
 
 def overlay_image_alpha(background_img, foreground_img_rgba, x_offset, y_offset):
+    """
+    Overlays a foreground image (with alpha channel) onto a background image.
+    Handles transparency and ensures the foreground fits within the background bounds.
+    
+    Args:
+        background_img (numpy.ndarray): The background image (3 channels, BGR).
+        foreground_img_rgba (numpy.ndarray): The foreground image (4 channels, BGRA).
+        x_offset (int): X-coordinate offset for placing the foreground.
+        y_offset (int): Y-coordinate offset for placing the foreground.
+        
+    Returns:
+        numpy.ndarray: The background image with the foreground overlaid.
+    """
+    
+    # Check if foreground_img_rgba has 4 channels
     if foreground_img_rgba is None or foreground_img_rgba.shape[2] != 4:
+        # print(f"Warning: Foreground image at offset ({x_offset},{y_offset}) is not a 4-channel BGRA image or is None. Skipping overlay.")
         return background_img
 
+    # Extract color channels (BGR) and alpha channel from foreground
     foreground_bgr = foreground_img_rgba[:, :, :3]
-    alpha_channel = foreground_img_rgba[:, :, 3] / 255.0
+    alpha_channel = foreground_img_rgba[:, :, 3] / 255.0  # Normalize alpha to 0-1
 
+    # Get dimensions
     h_fg, w_fg = foreground_bgr.shape[:2]
     h_bg, w_bg = background_img.shape[:2]
 
+    # Calculate region of interest (ROI) on the background where foreground will be placed
     y1, y2 = max(0, y_offset), min(h_bg, y_offset + h_fg)
     x1, x2 = max(0, x_offset), min(w_bg, x_offset + w_fg)
 
+    # Calculate corresponding ROI on the foreground (in case foreground is clipped by background edges)
     y1_fg = y1 - y_offset
     y2_fg = y2 - y_offset
     x1_fg = x1 - x_offset
     x2_fg = x2 - x_offset
 
+    # Get the ROI from the background
     background_roi = background_img[y1:y2, x1:x2]
+
+    # Get the ROI from the foreground BGR and alpha channels
     foreground_roi = foreground_bgr[y1_fg:y2_fg, x1_fg:x2_fg]
     alpha_roi = alpha_channel[y1_fg:y2_fg, x1_fg:x2_fg]
 
+    # Reshape alpha for broadcasting (to multiply with 3 color channels of BGR)
     alpha_roi_reshaped = alpha_roi[:, :, np.newaxis]
 
+    # Blend the images using alpha compositing formula:
+    # Output = Foreground_Color * Alpha + Background_Color * (1 - Alpha)
     blended_roi = (foreground_roi * alpha_roi_reshaped + 
                    background_roi * (1 - alpha_roi_reshaped)).astype(np.uint8)
 
+    # Place the blended ROI back into the background image
     background_img[y1:y2, x1:x2] = blended_roi
 
     return background_img
 
 
 class ImageGenerator:
+    """
+    Generates synthetic Thai license plate images.
+    """
     def __init__(self, save_path):
         self.save_path = save_path
         
+        # Get the directory of the current script to form absolute paths
         script_dir = os.path.dirname(os.path.abspath(__file__))
 
+        # Load Plate background image (general default)
         plate_path = os.path.join(script_dir, "plate.jpg")
-        self.plate = cv2.imread(plate_path, cv2.IMREAD_COLOR)
+        self.plate = cv2.imread(plate_path, cv2.IMREAD_COLOR) # Ensure loading as BGR (3 channels)
         if self.plate is None:
             print(f"ERROR: Failed to load plate image: {plate_path}")
-            exit()
+            exit() # Exit if a critical asset like plate.jpg is missing
 
+        # Initialize the dictionary to store special plate backgrounds
         self.special_plates = {} 
-        # โหลดป้ายพิเศษทั้งหมดของคุณที่นี่ (เหมือนโค้ดเดิม)
-        # ตัวอย่าง:
+
+        # Load special plate background images and add to special_plates dictionary
+        # --- Add all your special plate loading here ---
+        # Example: AQ Plate
         aq_plate_path = os.path.join(script_dir, "AQ_plate.jpg")
         aq_plate_img = cv2.imread(aq_plate_path, cv2.IMREAD_COLOR)
         if aq_plate_img is None:
             print(f"WARNING: Failed to load AQ plate image: {aq_plate_path}. 'AQ' plates might use default 'plate.jpg'.")
         self.special_plates['AQ'] = aq_plate_img 
 
+        # BJ Plate
         bj_plate_path = os.path.join(script_dir, "BJ_plate.jpg")
         bj_plate_img = cv2.imread(bj_plate_path, cv2.IMREAD_COLOR)
         if bj_plate_img is None:
             print(f"WARNING: Failed to load BJ plate image: {bj_plate_path}. 'BJ' plates might use default 'plate.jpg'.")
         self.special_plates['BJ'] = bj_plate_img
         
+        # BU Plate
         bu_plate_path = os.path.join(script_dir, "BU_plate.jpg")
         bu_plate_img = cv2.imread(bu_plate_path, cv2.IMREAD_COLOR)
         if bu_plate_img is None:
             print(f"WARNING: Failed to load BU plate image: {bu_plate_path}. 'BU' plates might use default 'plate.jpg'.")
         self.special_plates['BU'] = bu_plate_img
 
+        # BY Plate
         by_plate_path = os.path.join(script_dir, "BY_plate.jpg")
         by_plate_img = cv2.imread(by_plate_path, cv2.IMREAD_COLOR)
         if by_plate_img is None:
             print(f"WARNING: Failed to load BY plate image: {by_plate_path}. 'BY' plates might use default 'plate.jpg'.")
         self.special_plates['BY'] = by_plate_img 
 
+        # CD Plate
         cd_plate_path = os.path.join(script_dir, "CD_plate.jpg")
         cd_plate_img = cv2.imread(cd_plate_path, cv2.IMREAD_COLOR)
         if cd_plate_img is None:
             print(f"WARNING: Failed to load CD plate image: {cd_plate_path}. 'CD' plates might use default 'plate.jpg'.")
         self.special_plates['CD'] = cd_plate_img
 
+        # CQ Plate
         cq_plate_path = os.path.join(script_dir, "CQ_plate.jpg")
         cq_plate_img = cv2.imread(cq_plate_path, cv2.IMREAD_COLOR)
         if cq_plate_img is None:
@@ -332,18 +318,19 @@ class ImageGenerator:
             print(f"WARNING: Failed to load CV plate image: {cv_plate_path}. 'CV' plates might use default 'plate.jpg'.")
         self.special_plates['CV'] = cv_plate_img
 
+        # --- IMPORTANT: Commented out if you don't have DV_plate.jpg ---
+        # dv_plate_path = os.path.join(script_dir, "DV_plate.jpg")
+        # dv_plate_img = cv2.imread(dv_plate_path, cv2.IMREAD_COLOR)
+        # if dv_plate_img is None:
+        #     print(f"WARNING: Failed to load DV plate image: {dv_plate_path}. 'DV' plates might use default 'plate.jpg'.")
+        # self.special_plates['DV'] = dv_plate_img
+        # --- End of DV_plate.jpg comment block ---
+
         av_plate_path = os.path.join(script_dir, "AV_plate.jpg")
         av_plate_img = cv2.imread(av_plate_path, cv2.IMREAD_COLOR)
         if av_plate_img is None:
             print(f"WARNING: Failed to load AV plate image: {av_plate_path}. 'AV' plates might use default 'plate.jpg'.")
         self.special_plates['AV'] = av_plate_img
-
-        da_plate_path = os.path.join(script_dir, "DA_plate.jpg")
-        da_plate_img = cv2.imread(da_plate_path, cv2.IMREAD_COLOR)
-        if da_plate_img is None:
-            print(f"WARNING: Failed to load DA plate image: {da_plate_path}. 'DA' plates might use default 'plate.jpg'.")
-        self.special_plates['DA'] = da_plate_img
-
 
         bf_plate_path = os.path.join(script_dir, "BF_plate.jpg")
         bf_plate_img = cv2.imread(bf_plate_path, cv2.IMREAD_COLOR)
@@ -417,99 +404,90 @@ class ImageGenerator:
             print(f"WARNING: Failed to load CW plate image: {cw_plate_path}. 'CW' plates might use default 'plate.jpg'.")
         self.special_plates['CW'] = cw_plate_img
 
+        # --- Removed self.special_plate_provinces as per your request ---
 
-        self.color_plates = {}
-        white_plate_path = os.path.join(script_dir, "plate.jpg")
-        self.color_plates['ขาว'] = cv2.imread(white_plate_path, cv2.IMREAD_COLOR)
-        if self.color_plates['ขาว'] is None:
-             print(f"ERROR: Failed to load default white plate image: {white_plate_path}. Defaulting to solid white.")
-             self.color_plates['ขาว'] = np.full((150, 330, 3), 255, dtype=np.uint8) 
-
-        self.color_plates['เหลือง'] = np.full((150, 330, 3), (0, 255, 255), dtype=np.uint8) 
-        self.color_plates['เขียว'] = np.full((150, 330, 3), (0, 128, 0), dtype=np.uint8) 
-        self.color_plates['แดง'] = np.full((150, 330, 3), (0, 0, 255), dtype=np.uint8) 
-        
-        for color, img in self.color_plates.items():
-            if img is None:
-                print(f"WARNING: Plate background for color '{color}' is missing. It will default to a solid color if specified.")
-
-
+        # Helper function to load images from a directory
         def load_images_from_dir(directory_name):
             full_path = os.path.join(script_dir, directory_name)
             images = []
             names = []
             if os.path.exists(full_path):
                 file_list = os.listdir(full_path)
+                # Sort files to ensure consistent order (e.g., 0.png, 1.png, ..., 9.png)
                 file_list.sort() 
                 for file_name in file_list:
+                    # Filter out non-image files if any
                     if file_name.lower().endswith(('.png', '.jpg', '.jpeg')):
                         img_path = os.path.join(full_path, file_name)
+                        # Load PNG with IMREAD_UNCHANGED to get Alpha Channel
                         img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED) 
                         if img is None:
                             print(f"WARNING: Failed to load image: {img_path}")
                         images.append(img)
-                        names.append(os.path.splitext(file_name)[0])
+                        names.append(os.path.splitext(file_name)[0]) # Get name without extension
             else:
                 print(f"ERROR: Directory not found: {full_path}")
-                exit()
+                exit() # Exit if a required directory is missing
             return images, names
 
+        # Loading Number 0-9
         self.Number, self.number_list = load_images_from_dir("num")
-        self.NumberS, self.numberS_list = load_images_from_dir("numS")
-        self.NumberF, self.numberF_list = load_images_from_dir("num_front")
-        self.Char1, self.char_list = load_images_from_dir("char1")
-        self.Province, self.province_list = load_images_from_dir("province")
-        self.background_images, _ = load_images_from_dir("background_images")
-        if not self.background_images:
-            print("WARNING: ไม่พบรูปภาพในไดเรกทอรี 'background_images' จะใช้พื้นหลังสีทึบเป็นทางเลือกแทน")
             
-    def Type_4(self, num, save=False, plate_type=None, rx_rotation=0, ry_rotation=0, rz_rotation=0, plate_color=None, plate_width=330, plate_height=150):
+        # Loading Number 1-9 (numbers that start a sequence)
+        self.NumberS, self.numberS_list = load_images_from_dir("numS")
+
+        # Loading Front Number
+        self.NumberF, self.numberF_list = load_images_from_dir("num_front")
+            
+        # Loading Char
+        self.Char1, self.char_list = load_images_from_dir("char1")
+
+        # Loading Province
+        self.Province, self.province_list = load_images_from_dir("province")
+            
+    def Type_4(self, num, save=False, plate_type=None, z_rotation=0, no_blur=False): # เพิ่ม no_blur=False
         """
-        สร้างป้ายทะเบียนรูปแบบ Type 4
-        รูปแบบ: [ตัวเลขด้านหน้า][ตัวอักษร1][ตัวอักษร1][ตัวเลขเริ่มต้น][ตัวเลข][ตัวเลข][ตัวเลข][จังหวัด]
+        Generates license plates of Type 4 format.
+        Format: [NumberF][Char1][Char1][NumberS][Number][Number][Number][Province]
+        e.g., 1กข1234กรุงเทพมหานคร
 
-        อาร์กิวเมนต์:
-            num (int): จำนวนรูปภาพที่ต้องการสร้าง
-            save (bool): True เพื่อบันทึกรูปภาพ, False เพื่อแสดงผล
-            plate_type (str, optional): ประเภทพื้นหลังป้ายที่เฉพาะเจาะจง (เช่น 'AQ', 'BJ')
-                                        หากเป็น None จะสุ่มเลือกเหมือนเดิม
-            rx_rotation (int, optional): มุมการหมุนรอบแกน X (Pitch) เป็นองศา
-            ry_rotation (int, optional): มุมการหมุนรอบแกน Y (Yaw) เป็นองศา
-            rz_rotation (int, optional): มุมการหมุนรอบแกน Z (Roll) เป็นองศา
-            plate_color (str, optional): สีพื้นหลังป้ายที่ต้องการ ('ขาว', 'เหลือง', 'เขียว', 'แดง')
-                                        หากเป็น None จะใช้ตรรกะการเลือกป้ายตามปกติ
-            plate_width (int, optional): ความกว้างของป้ายทะเบียนที่ต้องการ (ค่าเริ่มต้น 330)
-            plate_height (int, optional): ความสูงของป้ายทะเบียนที่ต้องการ (ค่าเริ่มต้น 150)
+        Args:
+            num (int): Number of images to generate.
+            save (bool): True to save images, False to display.
+            plate_type (str, optional): Specific plate background type (e.g., 'AQ', 'BJ').
+                                        If None, uses random selection as before.
+            z_rotation (int, optional): The rotation angle in degrees for Z-axis.
+                                        If 0, no rotation is applied.
+            no_blur (bool, optional): If True, no blurring augmentation will be applied.
         """
-        original_plate_width = 330
-        original_plate_height = 150
+        top_w, top_h = 35, 80
+        top_char_w, top_char_h = 40, 80
+        bot_w, bot_h = 200, 40
 
-        scale_w = plate_width / original_plate_width
-        scale_h = plate_height / original_plate_height
-
-        top_w = int(35 * scale_w)
-        top_h = int(80 * scale_h)
-        top_char_w = int(40 * scale_w)
-        top_char_h = int(80 * scale_h)
-        bot_w = int(200 * scale_w)
-        bot_h = int(40 * scale_h)
-
-        row_char = int(10 * scale_h)
-        col_char_start = int(25 * scale_w)
-        col_province_start = int(65 * scale_w)
-        row_province = int(97 * scale_h)
-
+        # Resize all loaded images once to improve performance
+        # Filter out None values and resize. Expecting 4-channel for overlay.
         numberF_resized = [cv2.resize(number, (top_w, top_h)) for number in self.NumberF if number is not None]
         char_resized = [cv2.resize(char1, (top_char_w, top_char_h)) for char1 in self.Char1 if char1 is not None]
         numberS_resized = [cv2.resize(number, (top_w, top_h)) for number in self.NumberS if number is not None]
         number2_resized = [cv2.resize(number, (top_w, top_h)) for number in self.Number if number is not None]
         province1_resized = [cv2.resize(province, (bot_w, bot_h)) for province in self.Province if province is not None]
         
-        if not char_resized: print("ERROR: ลิสต์ 'char_resized' ว่างเปล่า"); return
-        if not province1_resized: print("ERROR: ลิสต์ 'province1_resized' ว่างเปล่า"); return
-        if not numberF_resized: print("ERROR: ลิสต์ 'numberF_resized' ว่างเปล่า"); return
-        if not numberS_resized: print("ERROR: ลิสต์ 'numberS_resized' ว่างเปล่า"); return
-        if not number2_resized: print("ERROR: ลิสต์ 'number2_resized' ว่างเปล่า"); return
+        # Ensure lists are not empty before getting length
+        if not char_resized:
+            print("ERROR: 'char_resized' list is empty. Check char1 folder content.")
+            return
+        if not province1_resized:
+            print("ERROR: 'province1_resized' list is empty. Check province folder content.")
+            return
+        if not numberF_resized:
+            print("ERROR: 'numberF_resized' list is empty. Check num_front folder content.")
+            return
+        if not numberS_resized:
+            print("ERROR: 'numberS_resized' list is empty. Check numS folder content.")
+            return
+        if not number2_resized:
+            print("ERROR: 'number2_resized' list is empty. Check num folder content.")
+            return
 
         char_len = len(char_resized) - 1
         province1_len = len(province1_resized) - 1
@@ -520,112 +498,116 @@ class ImageGenerator:
         for i, Iter in enumerate(range(num)):
             label = str()
 
-            # --- ย้าย: ตรวจสอบให้แน่ใจว่าได้เลือกจังหวัดก่อนเสมอ ---
-            rand_province_idx = random.randint(0, province1_len)
-            selected_province_name = self.province_list[rand_province_idx]
-            # --- สิ้นสุดส่วนที่ย้าย ---
+            Plate_to_use = self.plate # Default plate
+            selected_province_name = None 
+            rand_province_idx = -1 
 
-            # --- ตรรกะการเลือกพื้นหลังป้าย (อัปเดต) ---
-            Plate_base_img = None
-            if plate_color and plate_color in self.color_plates:
-                # สร้างรูปภาพสีทึบตามขนาดที่กำหนด
-                color_bgr = self.color_plates[plate_color][0, 0] # ดึงสี BGR จากภาพสีทึบที่โหลดไว้
-                Plate_base_img = np.full((plate_height, plate_width, 3), color_bgr, dtype=np.uint8)
-            elif plate_type and plate_type in self.special_plates and self.special_plates[plate_type] is not None:
-                Plate_base_img = self.special_plates[plate_type].copy()
+            # Determine which plate background to use based on plate_type argument
+            if plate_type and plate_type in self.special_plates and self.special_plates[plate_type] is not None:
+                Plate_to_use = self.special_plates[plate_type]
+                
+                # --- MODIFIED LOGIC: Use plate_type directly as province name ---
+                selected_province_name = plate_type # Use the plate_type as the desired province name
+                try:
+                    rand_province_idx = self.province_list.index(selected_province_name)
+                except ValueError:
+                    print(f"WARNING: Province image '{selected_province_name}' for plate type '{plate_type}' not found in province list. Falling back to random province for text.")
+                    # Fallback to random if the specified province image isn't found
+                    rand_province_idx = random.randint(0, province1_len)
+                    selected_province_name = self.province_list[rand_province_idx]
+                # --- END MODIFIED LOGIC ---
             else:
-                # บล็อกนี้จะใช้ชื่อจังหวัดที่สุ่มไว้แล้ว ถ้ามี
+                # Original random province selection and 50% chance for special plates based on province name
+                rand_province_idx = random.randint(0, province1_len)
+                selected_province_name = self.province_list[rand_province_idx]
                 if selected_province_name in self.special_plates and \
                    self.special_plates[selected_province_name] is not None and \
                    random.random() < 0.5:
-                    Plate_base_img = self.special_plates[selected_province_name].copy()
-                else:
-                    Plate_base_img = self.plate.copy() # ใช้ plate.jpg เป็นค่าเริ่มต้น
-
-            if Plate_base_img is None: 
-                Plate_base_img = self.plate.copy()
+                    Plate_to_use = self.special_plates[selected_province_name]
             
-            # --- ปรับขนาด Plate ตาม plate_width, plate_height ที่กำหนด ---
-            Plate = cv2.resize(Plate_base_img, (plate_width, plate_height))
+            # Error check for rand_province_idx in case of unexpected scenarios (e.g. empty province list)
+            if rand_province_idx == -1: # This should be handled by the logic above, but as a safeguard
+                rand_province_idx = random.randint(0, province1_len)
+                selected_province_name = self.province_list[rand_province_idx]
 
-            # ขนาดพื้นหลังใหญ่ (ยังคงเป็น 800x400)
+            Plate = cv2.resize(Plate_to_use.copy(), (330, 150))
+            # --- End Plate/Province Logic ---
+
             b_width, b_height = 400, 800         
+            random_R, random_G, random_B = random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)
+            background = np.zeros((b_width, b_height, 3), np.uint8)
+            cv2.rectangle(background, (0, 0), (b_height, b_width), (random_R, random_G, random_B), -1)
             
-            if self.background_images:
-                chosen_bg_img = random.choice(self.background_images).copy()
-                if chosen_bg_img.shape[2] == 4:
-                    chosen_bg_img = cv2.cvtColor(chosen_bg_img, cv2.COLOR_BGRA2BGR)
-                background = cv2.resize(chosen_bg_img, (b_height, b_width))
-            else:
-                random_R, random_G, random_B = random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)
-                background = np.zeros((b_width, b_height, 3), np.uint8)
-                cv2.rectangle(background, (0, 0), (b_height, b_width), (random_R, random_G, random_B), -1)
-            
-            # ใช้พิกัดที่ปรับขนาดแล้ว
-            col = col_char_start
+            # row -> y , col -> x (coordinates for placing characters on the plate)
+            row, col = 10, 25
 
+            # number Front
             rand_int = random.randint(0, numberF_len)
             label += self.numberF_list[rand_int]
-            Plate = overlay_image_alpha(Plate, numberF_resized[rand_int], col, row_char)
+            Plate = overlay_image_alpha(Plate, numberF_resized[rand_int], col, row)
             col += top_w
 
+            # character 1
             rand_int = random.randint(0, char_len)
             label += self.char_list[rand_int]
-            Plate = overlay_image_alpha(Plate, char_resized[rand_int], col, row_char)
+            Plate = overlay_image_alpha(Plate, char_resized[rand_int], col, row)
             col += top_char_w
             
+            # character 2
             rand_int = random.randint(0, char_len)
             label += self.char_list[rand_int]
-            Plate = overlay_image_alpha(Plate, char_resized[rand_int], col, row_char)
-            col += top_w + int(20 * scale_w) # ปรับระยะห่าง
+            Plate = overlay_image_alpha(Plate, char_resized[rand_int], col, row)
+            col += top_w + 20 # Add extra space between character and starting number
 
+            # number Start (1-9)
             rand_int = random.randint(0, numberS_len)
             label += self.numberS_list[rand_int]
-            Plate = overlay_image_alpha(Plate, numberS_resized[rand_int], col, row_char)
+            Plate = overlay_image_alpha(Plate, numberS_resized[rand_int], col, row)
             col += top_w
 
+            # number 2 (0-9)
             rand_int = random.randint(0, number2_len)
             label += self.number_list[rand_int]
-            Plate = overlay_image_alpha(Plate, number2_resized[rand_int], col, row_char)
+            Plate = overlay_image_alpha(Plate, number2_resized[rand_int], col, row)
             col += top_w
 
+            # number 3 (0-9)
             rand_int = random.randint(0, number2_len)
             label += self.number_list[rand_int]
-            Plate = overlay_image_alpha(Plate, number2_resized[rand_int], col, row_char)
+            Plate = overlay_image_alpha(Plate, number2_resized[rand_int], col, row)
             col += top_w
 
+            # number 4 (0-9)
             rand_int = random.randint(0, number2_len)
             label += self.number_list[rand_int]
-            Plate = overlay_image_alpha(Plate, number2_resized[rand_int], col, row_char)
+            Plate = overlay_image_alpha(Plate, number2_resized[rand_int], col, row)
 
-            # ใช้พิกัดที่ปรับขนาดแล้ว
+            row, col = 97, 65 # new line for province (adjust coordinates as needed)
+            
+            # province (use the selected province for text)
             label += selected_province_name
-            Plate = overlay_image_alpha(Plate, province1_resized[rand_province_idx], col_province_start, row_province)
+            Plate = overlay_image_alpha(Plate, province1_resized[rand_province_idx], col, row)
 
-            Plate = apply_3d_rotation(Plate, rx_rotation, ry_rotation, rz_rotation)
-            
+            # --- Apply Z-rotation to the Plate image before placing it on background ---
+            if z_rotation != 0:
+                Plate = rotate_image(Plate, z_rotation)
+            # --- End Z-rotation ---
+
+            # Place the generated plate onto the background
             s_width, s_height = int((b_width - Plate.shape[0]) / 2), int((b_height - Plate.shape[1]) / 2)
-            
+            # Ensure Plate is 3-channel BGR before placing on 3-channel background
             if Plate.shape[2] == 4:
                 Plate_bgr = cv2.cvtColor(Plate, cv2.COLOR_BGRA2BGR)
             else:
                 Plate_bgr = Plate
                 
-            y1_bg, y2_bg = s_width, s_width + Plate_bgr.shape[0]
-            x1_bg, x2_bg = s_height, s_height + Plate_bgr.shape[1]
-
-            if y2_bg > b_width:
-                Plate_bgr = Plate_bgr[:b_width - y1_bg, :]
-                y2_bg = b_width
-            if x2_bg > b_height:
-                Plate_bgr = Plate_bgr[:, :b_height - x1_bg]
-                x2_bg = b_height
+            background[s_width:Plate.shape[0] + s_width, s_height:Plate.shape[1] + s_height, :] = Plate_bgr
             
-            if Plate_bgr.shape[0] > 0 and Plate_bgr.shape[1] > 0:
-                background[y1_bg:y2_bg, x1_bg:x2_bg, :] = Plate_bgr
+            # Apply image augmentation to the final background image
+            # ส่งค่า apply_blur โดยใช้ not no_blur (ถ้า no_blur เป็น True, apply_blur จะเป็น False)
+            background = image_augmentation(background, type2=True, apply_blur=not no_blur)
 
-            background = image_augmentation(background, type2=True)
-
+            # Save or display the image
             if save:
                 output_filename = os.path.join(self.save_path, label + ".jpg")
                 cv2.imwrite(output_filename, background)
@@ -635,47 +617,34 @@ class ImageGenerator:
                 cv2.destroyAllWindows()
 
 
-# ตั้งค่าการแยกวิเคราะห์อาร์กิวเมนต์
-parser = argparse.ArgumentParser(description="สร้างรูปภาพป้ายทะเบียนไทยสังเคราะห์")
-parser.add_argument("-i", "--img_dir", help="ไดเรกทอรีสำหรับบันทึกรูปภาพที่สร้าง",
+# Argument parsing setup
+parser = argparse.ArgumentParser(description="Generate synthetic Thai license plate images.")
+parser.add_argument("-i", "--img_dir", help="Directory to save generated images",
                     type=str, default="../CRNN/DB/")
-parser.add_argument("-n", "--num", help="จำนวนรูปภาพที่ต้องการสร้าง",
+parser.add_argument("-n", "--num", help="Number of images to generate",
                     type=int, required=True)
-parser.add_argument("-s", "--save", help="ตั้งค่าเป็น True เพื่อบันทึกรูปภาพ, False เพื่อแสดงผล",
+parser.add_argument("-s", "--save", help="Set to True to save images, False to display them",
                     action='store_true', default=False)
-parser.add_argument("--rx", "--rx_rotation", help="มุมการหมุนรอบแกน X (Pitch) เป็นองศา",
+parser.add_argument("-z", "--z_rotation", help="Rotation angle in degrees (Z-axis). Positive for counter-clockwise.",
                     type=int, default=0)
-parser.add_argument("--ry", "--ry_rotation", help="มุมการหมุนรอบแกน Y (Yaw) เป็นองศา",
-                    type=int, default=0)
-parser.add_argument("--rz", "--rz_rotation", help="มุมการหมุนรอบแกน Z (Roll) เป็นองศา",
-                    type=int, default=0)
-parser.add_argument("-p", "--plate_type", help="ประเภทพื้นหลังป้ายที่เฉพาะเจาะจง (เช่น 'AQ', 'BJ') หากไม่ระบุจะสุ่มเลือก",
+parser.add_argument("-p", "--plate_type", help="Specific plate background type (e.g., 'AQ', 'BJ'). If not provided, random.",
                     type=str, default=None) 
-parser.add_argument("--pc", "--plate_color", help="สีพื้นหลังป้ายที่ต้องการ ('ขาว', 'เหลือง', 'เขียว', 'แดง')",
-                    type=str, default=None)
-parser.add_argument("--pw", "--plate_width", help="ความกว้างของป้ายทะเบียน (ค่าเริ่มต้น 330)",
-                    type=int, default=330)
-parser.add_argument("--ph", "--plate_height", help="ความสูงของป้ายทะเบียน (ค่าเริ่มต้น 150)",
-                    type=int, default=150)
+parser.add_argument("--no_blur", help="Set to True to disable blurring augmentation.", # เพิ่ม argument ใหม่
+                    action='store_true', default=False)
 args = parser.parse_args()
 
-# บล็อกการรันหลัก
+# Main execution block
 img_dir = args.img_dir
+# Ensure the save directory exists if saving
 if args.save and not os.path.exists(img_dir):
     os.makedirs(img_dir)
-    print(f"สร้างไดเรกทอรีเอาต์พุต: {img_dir}")
+    print(f"Created output directory: {img_dir}")
 
 A = ImageGenerator(img_dir)
 
 num_img = args.num
 Save = args.save
 
-A.Type_4(num_img, save=Save, 
-         plate_type=args.plate_type, 
-         rx_rotation=args.rx, 
-         ry_rotation=args.ry, 
-         rz_rotation=args.rz,
-         plate_color=args.pc,
-         plate_width=args.pw,
-         plate_height=args.ph)
-print("Type 4 เสร็จสิ้น")
+# Pass all relevant arguments to Type_4, including z_rotation, plate_type, and no_blur
+A.Type_4(num_img, save=Save, plate_type=args.plate_type, z_rotation=args.z_rotation, no_blur=args.no_blur)
+print("Type 4 finish")
